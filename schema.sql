@@ -1,57 +1,57 @@
 -- ============================================================
 --  G's assistant  ·  Supabase schema
---  Plak dit in Supabase → SQL Editor → Run
+--  Paste this into Supabase -> SQL Editor -> Run
 -- ============================================================
 
 -- ------------------------------------------------------------
--- Hoofdtabel: elk onderwerp dat de bot kan tonen
+-- Main table: every topic the bot can show
 -- ------------------------------------------------------------
 create table if not exists public.entries (
   id            uuid primary key default gen_random_uuid(),
 
-  -- slug waarmee je hem opvraagt: /info onderwerp:giso  of  /giso
+  -- the slug you type: /info topic:sleep  or  /sleep
   key           text not null unique
                 check (key ~ '^[a-z0-9_-]{1,32}$'),
 
-  -- extra namen die naar dezelfde entry wijzen, bv. {'gizo','gsio'}
+  -- extra names pointing at the same entry, e.g. {'rest','off'}
   aliases       text[] not null default '{}',
 
   title         text not null,
   description   text,
 
-  -- grote klikbare titel-link van de embed
+  -- makes the embed title clickable
   url           text,
 
-  -- grote afbeelding onderaan de embed
+  -- large image at the bottom of the embed
   image_url     text,
-  -- kleine afbeelding rechtsboven
+  -- small image in the top-right corner
   thumbnail_url text,
 
-  -- hex kleur zonder #, bv. '5865F2'
+  -- hex color without the #, e.g. '5865F2'
   color         text default '5865F2',
 
-  -- knoppen onder de embed:
+  -- buttons under the embed:
   -- [{"label": "Website", "url": "https://..."}, {"label": "Docs", "url": "https://..."}]
   links         jsonb not null default '[]'::jsonb,
 
-  -- extra velden in de embed:
-  -- [{"name": "Prijs", "value": "€10", "inline": true}]
+  -- extra fields inside the embed:
+  -- [{"name": "Status", "value": "Active", "inline": true}]
   fields        jsonb not null default '[]'::jsonb,
 
-  -- true  = krijgt een eigen slash command (/giso)
-  -- false = alleen bereikbaar via /info onderwerp:...
+  -- true  = gets its own slash command (/sleep)
+  -- false = only reachable through /info topic:...
   dedicated     boolean not null default false,
 
-  -- submodus: verwijst naar de key van een dedicated command.
-  -- key 'giso-developer' met parent 'giso'  ->  /giso developer
+  -- sub mode: points at the key of a dedicated command.
+  -- key 'giso-developer' with parent 'giso'  ->  /giso developer
   parent        text,
 
-  -- korte omschrijving die in het /giso command staat (max 100 tekens)
+  -- short text shown in the command list (max 100 characters)
   command_desc  text,
 
   enabled       boolean not null default true,
 
-  -- teller: hoe vaak opgevraagd
+  -- counter: how often it has been requested
   uses          integer not null default 0,
 
   created_at    timestamptz not null default now(),
@@ -63,7 +63,7 @@ create index if not exists entries_enabled_idx  on public.entries (enabled);
 create index if not exists entries_aliases_idx  on public.entries using gin (aliases);
 create index if not exists entries_parent_idx   on public.entries (parent);
 
--- updated_at automatisch bijwerken
+-- keep updated_at current automatically
 create or replace function public.touch_updated_at()
 returns trigger
 language plpgsql
@@ -79,7 +79,7 @@ create trigger entries_touch_updated_at
   before update on public.entries
   for each row execute function public.touch_updated_at();
 
--- gebruiksteller ophogen (wordt door de bot aangeroepen)
+-- increment the usage counter (called by the bot)
 create or replace function public.bump_uses(entry_key text)
 returns void
 language sql
@@ -90,55 +90,22 @@ as $$
 $$;
 
 -- ------------------------------------------------------------
--- Beveiliging
--- RLS staat AAN en er zijn GEEN publieke policies.
--- De bot praat met de service_role key en gaat daar overheen.
--- Dus: niemand kan je data lezen met de publieke anon key.
+-- Security
+-- RLS is ON and there are NO public policies.
+-- The bot talks to the database with the service_role key, which
+-- bypasses RLS. So nobody can read your data with the public key.
 -- ------------------------------------------------------------
 alter table public.entries enable row level security;
 
--- Publieke sleutels: geen enkele toegang
+-- public keys: no access at all
 revoke all on public.entries from anon, authenticated;
 revoke all on function public.bump_uses(text) from anon, authenticated;
 
--- De bot draait op service_role. Expliciet toekennen, zodat dit ook werkt
--- als 'Automatically expose new tables' uit staat in je projectinstellingen.
+-- the bot runs as service_role. Granted explicitly so this keeps working
+-- even if 'Automatically expose new tables' is turned off in your settings.
 grant all on public.entries to service_role;
 grant execute on function public.bump_uses(text) to service_role;
 
 -- ============================================================
---  Voorbeelddata — pas aan of gooi weg
+--  Next step: run migration_commands.sql to add the commands
 -- ============================================================
-insert into public.entries
-  (key, aliases, title, description, url, image_url, color, links, fields, dedicated, command_desc)
-values
-  (
-    'giso',
-    array['gizo'],
-    'Giso',
-    E'Alles wat je over Giso moet weten, op één plek.\n\nVervang deze tekst in Supabase → Table Editor → entries.',
-    'https://example.com/giso',
-    null,
-    '5865F2',
-    '[{"label": "Website",  "url": "https://example.com/giso"},
-      {"label": "Handleiding", "url": "https://example.com/giso/docs"}]'::jsonb,
-    '[{"name": "Status", "value": "Actief", "inline": true},
-      {"name": "Versie", "value": "1.0",    "inline": true}]'::jsonb,
-    true,
-    'Info en links over Giso'
-  ),
-  (
-    'app',
-    array['applicatie','download'],
-    'De app',
-    E'Downloadlinks en info over de app.',
-    'https://example.com/app',
-    null,
-    '57F287',
-    '[{"label": "Android", "url": "https://play.google.com/"},
-      {"label": "iOS",     "url": "https://apps.apple.com/"}]'::jsonb,
-    '[]'::jsonb,
-    true,
-    'Downloadlinks en info over de app'
-  )
-on conflict (key) do nothing;

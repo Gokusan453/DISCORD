@@ -1,14 +1,14 @@
 """
-Registreert de slash commands bij Discord.
+Registers the slash commands with Discord.
 
-Draai dit lokaal (of via GitHub Actions) telkens als je:
-  - een nieuw onderwerp `dedicated = true` maakt in Supabase
-  - de omschrijving van een command verandert
+Run this locally (or via GitHub Actions) whenever you:
+  - mark a new topic as `dedicated = true` in Supabase
+  - change a command description
 
-Gebruik:
-    python register_commands.py                 # globaal (kan tot 1 uur duren)
-    python register_commands.py --guild 1234..  # in 1 server, meteen zichtbaar
-    python register_commands.py --list          # laat zien wat er nu geregistreerd staat
+Usage:
+    python register_commands.py                 # global (can take up to an hour)
+    python register_commands.py --guild 1234..  # one server, visible instantly
+    python register_commands.py --list          # show what is registered now
 """
 
 from __future__ import annotations
@@ -34,102 +34,106 @@ SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 
 API = "https://discord.com/api/v10"
 
+# Discord and Cloudflare block browser-like user agents (error 40333).
+USER_AGENT = "DiscordBot (https://github.com/Gokusan453/DISCORD, 1.0)"
+
 # Option types
 STRING, BOOLEAN, SUB_COMMAND = 3, 5, 1
 
 VALID_NAME = re.compile(r"^[a-z0-9_-]{1,32}$")
 
-# "0" = standaard voor niemand zichtbaar behalve serverbeheerders.
-# Via Serverinstellingen -> Integraties kun je het per rol alsnog openzetten.
+# "0" = hidden from everyone except server administrators by default.
+# You can still open it up per role via Server Settings → Integrations.
 ADMIN_ONLY = "0"
 
-# Antwoorden zijn standaard alleen voor jou zichtbaar; hiermee zet je er
-# eentje bewust in het kanaal.
-PUBLIEK = {
+# Replies are private by default; this switch posts one to the channel.
+PUBLIC = {
     "type": BOOLEAN,
-    "name": "publiek",
-    "description": "Laat het antwoord aan iedereen in het kanaal zien",
+    "name": "public",
+    "description": "Show the reply to everyone in the channel",
     "required": False,
 }
+
+RESERVED = {"info", "list", "manage"}
 
 
 def base_commands() -> list[dict]:
     return [
         {
             "name": "info",
-            "description": "Info, links en afbeeldingen over een onderwerp",
+            "description": "Info, links and images about a topic",
             "default_member_permissions": ADMIN_ONLY,
             "options": [
                 {
                     "type": STRING,
-                    "name": "onderwerp",
-                    "description": "Waar wil je info over? (typ om te zoeken)",
+                    "name": "topic",
+                    "description": "What do you want info about? (type to search)",
                     "required": True,
                     "autocomplete": True,
                 },
-                PUBLIEK,
+                PUBLIC,
             ],
         },
         {
-            "name": "lijst",
-            "description": "Laat alle onderwerpen zien die ik ken",
+            "name": "list",
+            "description": "Show every topic I know",
             "default_member_permissions": ADMIN_ONLY,
         },
         {
-            "name": "beheer",
-            "description": "Inhoud beheren (alleen de eigenaar)",
+            "name": "manage",
+            "description": "Manage the content (owner only)",
             "default_member_permissions": ADMIN_ONLY,
             "options": [
                 {
                     "type": SUB_COMMAND,
-                    "name": "toevoegen",
-                    "description": "Nieuw onderwerp toevoegen",
+                    "name": "add",
+                    "description": "Add a new topic",
                     "options": [
-                        {"type": STRING, "name": "key", "description": "Korte naam, bv. giso", "required": True},
-                        {"type": STRING, "name": "titel", "description": "Titel van de embed", "required": True},
-                        {"type": STRING, "name": "beschrijving", "description": "Tekst", "required": False},
-                        {"type": STRING, "name": "link", "description": "Hoofdlink (https://...)", "required": False},
-                        {"type": STRING, "name": "afbeelding", "description": "Afbeeldings-URL (https://...)", "required": False},
+                        {"type": STRING, "name": "key", "description": "Short name, e.g. sleep", "required": True},
+                        {"type": STRING, "name": "title", "description": "Title of the embed", "required": True},
+                        {"type": STRING, "name": "description", "description": "Body text", "required": False},
+                        {"type": STRING, "name": "link", "description": "Main link (https://...)", "required": False},
+                        {"type": STRING, "name": "image", "description": "Image URL (https://...)", "required": False},
                     ],
                 },
                 {
                     "type": SUB_COMMAND,
-                    "name": "bewerken",
-                    "description": "Eén veld van een onderwerp aanpassen",
+                    "name": "edit",
+                    "description": "Change one field of a topic",
                     "options": [
-                        {"type": STRING, "name": "key", "description": "Welk onderwerp?", "required": True},
+                        {"type": STRING, "name": "key", "description": "Which topic?", "required": True},
                         {
                             "type": STRING,
-                            "name": "veld",
-                            "description": "Wat wil je aanpassen?",
+                            "name": "field",
+                            "description": "What do you want to change?",
                             "required": True,
                             "choices": [
-                                {"name": "titel", "value": "titel"},
-                                {"name": "beschrijving", "value": "beschrijving"},
+                                {"name": "title", "value": "title"},
+                                {"name": "description", "value": "description"},
                                 {"name": "link", "value": "link"},
-                                {"name": "afbeelding", "value": "afbeelding"},
-                                {"name": "kleur (hex, bv. 5865F2)", "value": "kleur"},
+                                {"name": "image", "value": "image"},
+                                {"name": "color (hex, e.g. 5865F2)", "value": "color"},
                             ],
                         },
-                        {"type": STRING, "name": "waarde", "description": "Nieuwe waarde", "required": True},
+                        {"type": STRING, "name": "value", "description": "New value", "required": True},
                     ],
                 },
                 {
                     "type": SUB_COMMAND,
-                    "name": "knop",
-                    "description": "Een linkknop onder de embed toevoegen",
+                    "name": "button",
+                    "description": "Add a link button under the embed",
                     "options": [
-                        {"type": STRING, "name": "key", "description": "Welk onderwerp?", "required": True},
-                        {"type": STRING, "name": "label", "description": "Tekst op de knop", "required": True},
+                        {"type": STRING, "name": "key", "description": "Which topic?", "required": True},
+                        {"type": STRING, "name": "label", "description": "Text on the button", "required": True},
                         {"type": STRING, "name": "url", "description": "https://...", "required": True},
                     ],
                 },
                 {
                     "type": SUB_COMMAND,
-                    "name": "verwijderen",
-                    "description": "Onderwerp verwijderen",
+                    "name": "delete",
+                    "description": "Delete a topic",
                     "options": [
-                        {"type": STRING, "name": "key", "description": "Welk onderwerp?", "required": True},
+                        {"type": STRING, "name": "key", "description": "Which topic?", "required": True},
                     ],
                 },
             ],
@@ -150,12 +154,12 @@ def _fetch(params: dict) -> list[dict]:
 
 def dedicated_commands() -> list[dict]:
     """
-    Elk onderwerp met dedicated = true krijgt een eigen /commando.
-    Heeft zo'n onderwerp kinderen (rijen met parent = <key>), dan worden dat
-    submodi:  key 'giso' + kind 'giso-developer'  ->  /giso developer
+    Every topic with dedicated = true gets its own /command.
+    If such a topic has children (rows with parent = <key>), those become
+    sub modes: key 'giso' + child 'giso-developer'  ->  /giso developer
     """
     if not (SUPABASE_URL and SUPABASE_KEY):
-        print("! Supabase niet geconfigureerd — alleen de basiscommando's worden geregistreerd.")
+        print("! Supabase not configured — registering base commands only.")
         return []
 
     parents = _fetch(
@@ -183,10 +187,10 @@ def dedicated_commands() -> list[dict]:
     for row in parents:
         key = row["key"]
         if not VALID_NAME.match(key):
-            print(f"! '{key}' overgeslagen: ongeldige commandnaam.")
+            print(f"! skipped '{key}': invalid command name.")
             continue
-        if key in {"info", "lijst", "beheer"}:
-            print(f"! '{key}' overgeslagen: die naam is al in gebruik.")
+        if key in RESERVED:
+            print(f"! skipped '{key}': that name is already taken.")
             continue
 
         desc = (row.get("command_desc") or row.get("title") or key)[:100]
@@ -199,14 +203,14 @@ def dedicated_commands() -> list[dict]:
                 if mode.startswith(key + "-"):
                     mode = mode[len(key) + 1 :]
                 if not VALID_NAME.match(mode):
-                    print(f"! modus '{c['key']}' overgeslagen: ongeldige naam.")
+                    print(f"! skipped sub mode '{c['key']}': invalid name.")
                     continue
                 subs.append(
                     {
                         "type": SUB_COMMAND,
                         "name": mode,
                         "description": (c.get("command_desc") or c.get("title") or mode)[:100],
-                        "options": [PUBLIEK],
+                        "options": [PUBLIC],
                     }
                 )
             commands.append(
@@ -223,7 +227,7 @@ def dedicated_commands() -> list[dict]:
                     "name": key,
                     "description": desc,
                     "default_member_permissions": ADMIN_ONLY,
-                    "options": [PUBLIEK],
+                    "options": [PUBLIC],
                 }
             )
     return commands
@@ -237,15 +241,19 @@ def endpoint(guild: str | None) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--guild", help="Server-ID: commands zijn dan meteen zichtbaar")
-    parser.add_argument("--list", action="store_true", help="Toon huidige commands")
+    parser.add_argument("--guild", help="Server ID: commands appear instantly")
+    parser.add_argument("--list", action="store_true", help="Show current commands")
     args = parser.parse_args()
 
     if not (TOKEN and APP_ID):
-        print("DISCORD_BOT_TOKEN en DISCORD_APP_ID moeten in .env staan.")
+        print("DISCORD_BOT_TOKEN and DISCORD_APP_ID must be set in .env")
         return 1
 
-    headers = {"Authorization": f"Bot {TOKEN}", "Content-Type": "application/json"}
+    headers = {
+        "Authorization": f"Bot {TOKEN}",
+        "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
+    }
     url = endpoint(args.guild)
 
     if args.list:
@@ -259,15 +267,15 @@ def main() -> int:
 
     r = httpx.put(url, headers=headers, json=payload, timeout=30)
     if r.status_code >= 400:
-        print(f"Discord gaf {r.status_code}:\n{r.text}")
+        print(f"Discord returned {r.status_code}:\n{r.text}")
         return 1
 
-    scope = f"server {args.guild}" if args.guild else "alle servers (globaal)"
-    print(f"{len(r.json())} commands geregistreerd voor {scope}:")
+    scope = f"server {args.guild}" if args.guild else "all servers (global)"
+    print(f"Registered {len(r.json())} commands for {scope}:")
     for c in r.json():
         print(f"  /{c['name']} — {c.get('description', '')}")
     if not args.guild:
-        print("\nGlobale commands kunnen tot een uur duren voor ze overal zichtbaar zijn.")
+        print("\nGlobal commands can take up to an hour to appear everywhere.")
     return 0
 
 

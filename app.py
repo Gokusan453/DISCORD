@@ -1,8 +1,8 @@
 """
 G's assistant — serverless Discord bot (Vercel + Supabase)
 
-Discord stuurt elke slash command als een HTTPS POST naar dit bestand.
-Geen 24/7 proces nodig, dus dit draait gratis op Vercel Hobby.
+Discord delivers every slash command as an HTTPS POST to this file.
+No long-running process is needed, so this runs free on Vercel Hobby.
 """
 
 from __future__ import annotations
@@ -25,9 +25,9 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 OWNER_ID = os.environ.get("OWNER_ID", "")
 
-# Commands die de bot zelf afhandelt. Elke ANDERE commandnaam wordt
-# opgezocht als 'key' in de database — dus /giso zoekt de entry 'giso'.
-BUILTIN_COMMANDS = {"info", "lijst", "beheer"}
+# Commands handled by the bot itself. Any OTHER command name is looked up
+# as a 'key' in the database — so /sleep resolves to the entry 'sleep'.
+BUILTIN_COMMANDS = {"info", "list", "manage"}
 
 # Interaction types
 PING = 1
@@ -41,9 +41,9 @@ PONG = 1
 CHANNEL_MESSAGE = 4
 AUTOCOMPLETE_RESULT = 8
 
-EPHEMERAL = 64  # alleen zichtbaar voor wie het commando typte
+EPHEMERAL = 64  # visible only to the user who ran the command
 
-SUB_COMMAND = 1  # option-type: submodus, bv /giso developer
+SUB_COMMAND = 1  # option type: sub mode, e.g. /giso developer
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -51,7 +51,7 @@ _client: httpx.AsyncClient | None = None
 
 
 def get_client() -> httpx.AsyncClient:
-    """Eén HTTP-client die warm blijft tussen invocations."""
+    """A single HTTP client that stays warm between invocations."""
     global _client
     if _client is None:
         _client = httpx.AsyncClient(
@@ -66,7 +66,7 @@ def get_client() -> httpx.AsyncClient:
 
 
 # ----------------------------------------------------------------------
-# Supabase (REST, geen zware SDK — scheelt koude start)
+# Supabase (plain REST — no heavy SDK, keeps cold starts fast)
 # ----------------------------------------------------------------------
 async def sb_select(params: dict[str, str]) -> list[dict[str, Any]]:
     r = await get_client().get(f"{SUPABASE_URL}/rest/v1/entries", params=params)
@@ -106,7 +106,7 @@ async def sb_delete(key: str) -> list[dict[str, Any]]:
 
 
 async def find_entry(term: str) -> dict[str, Any] | None:
-    """Zoek op key, daarna op alias."""
+    """Look up by key first, then by alias."""
     term = (term or "").strip().lower()
     if not term:
         return None
@@ -127,11 +127,11 @@ async def bump_uses(key: str) -> None:
             f"{SUPABASE_URL}/rest/v1/rpc/bump_uses", json={"entry_key": key}
         )
     except Exception:
-        pass  # een tellertje is nooit een reden om het antwoord te laten falen
+        pass  # a usage counter is never a reason to fail the reply
 
 
 # ----------------------------------------------------------------------
-# Embed bouwen
+# Building the embed
 # ----------------------------------------------------------------------
 def clip(text: Any, limit: int) -> str:
     s = "" if text is None else str(text)
@@ -187,7 +187,7 @@ def build_components(entry: dict[str, Any]) -> list[dict[str, Any]]:
     buttons = [
         {
             "type": 2,
-            "style": 5,  # link-knop
+            "style": 5,  # link button
             "label": clip(link.get("label") or "Open", 80),
             "url": link["url"].strip(),
         }
@@ -200,7 +200,7 @@ def build_components(entry: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def entry_response(entry: dict[str, Any], ephemeral: bool = False) -> dict[str, Any]:
+def entry_response(entry: dict[str, Any], ephemeral: bool = True) -> dict[str, Any]:
     data: dict[str, Any] = {
         "embeds": [build_embed(entry)],
         "components": build_components(entry),
@@ -218,7 +218,7 @@ def text_response(message: str, ephemeral: bool = True) -> dict[str, Any]:
 
 
 # ----------------------------------------------------------------------
-# Option-helpers
+# Option helpers
 # ----------------------------------------------------------------------
 def options_to_dict(options: list[dict[str, Any]] | None) -> dict[str, Any]:
     return {o["name"]: o.get("value") for o in (options or [])}
@@ -235,14 +235,14 @@ def actor_id(body: dict[str, Any]) -> str:
 # ----------------------------------------------------------------------
 async def handle_info(data: dict[str, Any]) -> dict[str, Any]:
     opts = options_to_dict(data.get("options"))
-    term = str(opts.get("onderwerp", "")).lower()
-    # standaard privé; met publiek:true ziet het hele kanaal het
-    ephemeral = not bool(opts.get("publiek", False))
+    term = str(opts.get("topic", "")).lower()
+    # private by default; public:true shows it to the whole channel
+    ephemeral = not bool(opts.get("public", False))
 
     entry = await find_entry(term)
     if not entry:
         return text_response(
-            f"Ik ken **{clip(term, 80)}** niet. Typ `/lijst` voor alles wat ik wél ken."
+            f"I don't know **{clip(term, 80)}**. Try `/list` to see everything I do know."
         )
 
     await bump_uses(entry["key"])
@@ -250,7 +250,7 @@ async def handle_info(data: dict[str, Any]) -> dict[str, Any]:
 
 
 async def handle_dedicated(command_name: str, data: dict[str, Any]) -> dict[str, Any]:
-    # Heeft dit command een submodus? bv /giso developer  →  key 'giso-developer'
+    # Does this command have a sub mode? e.g. /giso developer → key 'giso-developer'
     options = data.get("options") or []
     if options and options[0].get("type") == SUB_COMMAND:
         key = f"{command_name}-{options[0]['name']}"
@@ -258,33 +258,39 @@ async def handle_dedicated(command_name: str, data: dict[str, Any]) -> dict[str,
     else:
         key = command_name
 
-    ephemeral = not bool(options_to_dict(options).get("publiek", False))
+    ephemeral = not bool(options_to_dict(options).get("public", False))
 
     entry = await find_entry(key)
     if not entry:
         return text_response(
-            f"`/{command_name}` heeft nog geen inhoud met key `{key}`. "
-            f"Voeg een rij toe in de database."
+            f"`/{command_name}` has no content yet for key `{key}`. "
+            f"Add a row to the database."
         )
     await bump_uses(entry["key"])
     return entry_response(entry, ephemeral)
 
 
-async def handle_lijst() -> dict[str, Any]:
+async def handle_list() -> dict[str, Any]:
     rows = await sb_select(
         {
-            "select": "key,title,command_desc,dedicated",
+            "select": "key,title,command_desc,dedicated,parent",
             "enabled": "is.true",
             "order": "key.asc",
             "limit": "100",
         }
     )
     if not rows:
-        return text_response("De database is nog leeg.")
+        return text_response("The database is still empty.")
 
     lines = []
     for row in rows:
-        prefix = f"`/{row['key']}`" if row.get("dedicated") else f"`/info {row['key']}`"
+        parent = row.get("parent")
+        if parent:
+            prefix = f"`/{parent} {row['key'].removeprefix(parent + '-')}`"
+        elif row.get("dedicated"):
+            prefix = f"`/{row['key']}`"
+        else:
+            prefix = f"`/info {row['key']}`"
         desc = row.get("command_desc") or row.get("title") or ""
         lines.append(f"{prefix} — {clip(desc, 80)}")
 
@@ -293,7 +299,7 @@ async def handle_lijst() -> dict[str, Any]:
         "data": {
             "embeds": [
                 {
-                    "title": f"Alle onderwerpen ({len(rows)})",
+                    "title": f"All topics ({len(rows)})",
                     "description": clip("\n".join(lines), 4096),
                     "color": 0x5865F2,
                 }
@@ -303,9 +309,9 @@ async def handle_lijst() -> dict[str, Any]:
     }
 
 
-async def handle_beheer(body: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
+async def handle_manage(body: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
     if not OWNER_ID or actor_id(body) != OWNER_ID:
-        return text_response("Alleen de eigenaar van de bot mag dit commando gebruiken.")
+        return text_response("Only the bot owner can use this command.")
 
     sub = (data.get("options") or [{}])[0]
     action = sub.get("name")
@@ -314,63 +320,63 @@ async def handle_beheer(body: dict[str, Any], data: dict[str, Any]) -> dict[str,
 
     if not re.fullmatch(r"[a-z0-9_-]{1,32}", key or ""):
         return text_response(
-            "Ongeldige key. Gebruik alleen kleine letters, cijfers, `-` en `_` (max 32)."
+            "Invalid key. Use lowercase letters, numbers, `-` and `_` only (max 32)."
         )
 
-    if action == "toevoegen":
+    if action == "add":
         row = {
             "key": key,
-            "title": opts.get("titel") or key,
-            "description": opts.get("beschrijving"),
+            "title": opts.get("title") or key,
+            "description": opts.get("description"),
             "url": opts.get("link"),
-            "image_url": opts.get("afbeelding"),
-            "command_desc": clip(opts.get("beschrijving") or opts.get("titel") or key, 100),
+            "image_url": opts.get("image"),
+            "command_desc": clip(opts.get("description") or opts.get("title") or key, 100),
             "dedicated": False,
         }
         try:
             await sb_insert({k: v for k, v in row.items() if v is not None})
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 409:
-                return text_response(f"`{key}` bestaat al. Gebruik `/beheer bewerken`.")
+                return text_response(f"`{key}` already exists. Use `/manage edit`.")
             raise
-        return text_response(f"Toegevoegd. Test met `/info onderwerp:{key}`", ephemeral=True)
+        return text_response(f"Added. Try it with `/info topic:{key}`")
 
-    if action == "bewerken":
-        veld = opts.get("veld")
-        waarde = opts.get("waarde")
-        kolommen = {
-            "titel": "title",
-            "beschrijving": "description",
+    if action == "edit":
+        field = opts.get("field")
+        value = opts.get("value")
+        columns = {
+            "title": "title",
+            "description": "description",
             "link": "url",
-            "afbeelding": "image_url",
-            "kleur": "color",
+            "image": "image_url",
+            "color": "color",
         }
-        if veld not in kolommen:
-            return text_response("Onbekend veld.")
-        rows = await sb_update(key, {kolommen[veld]: waarde})
+        if field not in columns:
+            return text_response("Unknown field.")
+        rows = await sb_update(key, {columns[field]: value})
         if not rows:
-            return text_response(f"`{key}` bestaat niet.")
-        return text_response(f"`{key}` → **{veld}** bijgewerkt.")
+            return text_response(f"`{key}` does not exist.")
+        return text_response(f"`{key}` → **{field}** updated.")
 
-    if action == "knop":
+    if action == "button":
         entry = await find_entry(key)
         if not entry:
-            return text_response(f"`{key}` bestaat niet.")
+            return text_response(f"`{key}` does not exist.")
         url = str(opts.get("url", "")).strip()
         if not is_http_url(url):
-            return text_response("Die URL moet met http:// of https:// beginnen.")
+            return text_response("That URL must start with http:// or https://")
         links = entry.get("links") if isinstance(entry.get("links"), list) else []
         links.append({"label": clip(opts.get("label") or "Open", 80), "url": url})
         await sb_update(key, {"links": links})
-        return text_response(f"Knop toegevoegd aan `{key}` ({len(links)} knoppen).")
+        return text_response(f"Button added to `{key}` ({len(links)} buttons total).")
 
-    if action == "verwijderen":
+    if action == "delete":
         rows = await sb_delete(key)
         if not rows:
-            return text_response(f"`{key}` bestaat niet.")
-        return text_response(f"`{key}` verwijderd.")
+            return text_response(f"`{key}` does not exist.")
+        return text_response(f"`{key}` deleted.")
 
-    return text_response("Onbekende actie.")
+    return text_response("Unknown action.")
 
 
 async def handle_autocomplete(data: dict[str, Any]) -> dict[str, Any]:
@@ -424,14 +430,14 @@ async def route(body: dict[str, Any]) -> dict[str, Any]:
     if itype == APPLICATION_COMMAND:
         if name == "info":
             return await handle_info(data)
-        if name == "lijst":
-            return await handle_lijst()
-        if name == "beheer":
-            return await handle_beheer(body, data)
+        if name == "list":
+            return await handle_list()
+        if name == "manage":
+            return await handle_manage(body, data)
         if name not in BUILTIN_COMMANDS:
             return await handle_dedicated(name, data)
 
-    return text_response("Dat commando ken ik niet.")
+    return text_response("I don't know that command.")
 
 
 def verify_signature(signature: str | None, timestamp: str | None, body: bytes) -> bool:
@@ -454,7 +460,7 @@ async def interactions(request: Request) -> Response:
         request.headers.get("x-signature-timestamp"),
         raw,
     ):
-        # Discord test dit bewust bij het opslaan van de endpoint-URL.
+        # Discord deliberately tests this when you save the endpoint URL.
         return Response(status_code=401, content="invalid request signature")
 
     try:
@@ -464,9 +470,9 @@ async def interactions(request: Request) -> Response:
 
     try:
         payload = await route(body)
-    except Exception as exc:  # nooit een 500 naar Discord teruggeven
+    except Exception as exc:  # never hand Discord a 500
         print(f"[error] {type(exc).__name__}: {exc}")
-        payload = text_response("Er ging iets mis bij het ophalen van de gegevens.")
+        payload = text_response("Something went wrong while fetching the data.")
 
     return Response(
         content=json.dumps(payload),

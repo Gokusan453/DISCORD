@@ -1,8 +1,8 @@
 """
-Lokale test zonder Discord en zonder Supabase.
+Local test without Discord and without Supabase.
 
-Zet een nep-sleutelpaar op, ondertekent testrequests precies zoals Discord dat
-doet, en vervangt de database-calls door vaste antwoorden.
+Sets up a fake key pair, signs test requests exactly the way Discord does,
+and replaces the database calls with fixed answers.
 
     pip install -r requirements.txt
     python test_local.py
@@ -15,7 +15,7 @@ import os
 
 from nacl.signing import SigningKey
 
-# Sleutelpaar aanmaken vóór app.py geladen wordt
+# Create the key pair before app.py is imported
 _signing_key = SigningKey.generate()
 os.environ["DISCORD_PUBLIC_KEY"] = _signing_key.verify_key.encode().hex()
 os.environ["SUPABASE_URL"] = "https://test.invalid"
@@ -26,21 +26,20 @@ import app as bot  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 FAKE = {
-    "giso": {
-        "key": "giso",
-        "title": "Giso",
-        "description": "Alles over Giso.",
-        "url": "https://example.com/giso",
-        "image_url": "https://example.com/giso.png",
+    "sleep": {
+        "key": "sleep",
+        "title": "🌙 Sleep",
+        "description": "System is going to sleep.",
         "color": "5865F2",
-        "links": [{"label": "Website", "url": "https://example.com/giso"}],
-        "fields": [{"name": "Status", "value": "Actief", "inline": True}],
+        "links": [],
+        "fields": [],
     },
     "giso-developer": {
         "key": "giso-developer",
         "title": "🟢 Giso — Developer",
-        "description": "Your work system is online. Please enter your password to continue.",
+        "description": "Your work system is online.",
         "url": "https://dev.giso.ai",
+        "image_url": "https://example.com/giso.png",
         "color": "FEE75C",
         "links": [{"label": "Open dev.giso.ai", "url": "https://dev.giso.ai"}],
     },
@@ -52,7 +51,13 @@ async def fake_find_entry(term):
 
 
 async def fake_sb_select(params):
-    return [{"key": "giso", "title": "Giso", "command_desc": "Info over Giso", "dedicated": True}]
+    return [
+        {"key": "sleep", "title": "Sleep", "command_desc": "Put the system to sleep",
+         "dedicated": True, "parent": None},
+        {"key": "giso-developer", "title": "Giso Developer",
+         "command_desc": "Open the developer environment",
+         "dedicated": False, "parent": "giso"},
+    ]
 
 
 async def fake_bump(key):
@@ -69,10 +74,11 @@ client = TestClient(bot.app)
 def post(payload: dict, *, valid: bool = True):
     body = json.dumps(payload).encode()
     timestamp = "1700000000"
-    if valid:
-        signature = _signing_key.sign(timestamp.encode() + body).signature.hex()
-    else:
-        signature = "00" * 64
+    signature = (
+        _signing_key.sign(timestamp.encode() + body).signature.hex()
+        if valid
+        else "00" * 64
+    )
     return client.post(
         "/api/interactions",
         content=body,
@@ -84,143 +90,76 @@ def post(payload: dict, *, valid: bool = True):
     )
 
 
-def check(label: str, condition: bool, detail: str = "") -> bool:
-    print(f"{'PASS' if condition else 'FAIL'}  {label}{'  ' + detail if detail else ''}")
+def check(label: str, condition: bool) -> bool:
+    print(f"{'PASS' if condition else 'FAIL'}  {label}")
     return condition
 
 
 def main() -> None:
-    results = []
+    r = []
+    me = {"member": {"user": {"id": "1"}}}
 
-    # 1. Foute signature moet 401 geven (Discord test dit bij het opslaan van de URL)
-    r = post({"type": 1}, valid=False)
-    results.append(check("foute signature → 401", r.status_code == 401))
+    # Security
+    r.append(check("bad signature -> 401", post({"type": 1}, valid=False).status_code == 401))
+    resp = post({"type": 1})
+    r.append(check("PING -> PONG", resp.status_code == 200 and resp.json() == {"type": 1}))
 
-    # 2. PING → PONG
-    r = post({"type": 1})
-    results.append(check("PING → PONG", r.status_code == 200 and r.json() == {"type": 1}))
+    # Standalone command
+    d = post({"type": 2, "data": {"name": "sleep"}, **me}).json()["data"]
+    r.append(check("/sleep -> embed", d["embeds"][0]["title"] == "🌙 Sleep"))
+    r.append(check("/sleep -> private by default", d.get("flags") == 64))
 
-    # 3. Dedicated command /giso
-    r = post({"type": 2, "data": {"name": "giso"}, "member": {"user": {"id": "1"}}})
-    data = r.json()["data"]
-    embed = data["embeds"][0]
-    results.append(check("/giso → embed", embed["title"] == "Giso"))
-    results.append(check("/giso → afbeelding", embed["image"]["url"].endswith(".png")))
-    results.append(
-        check("/giso → linkknop", data["components"][0]["components"][0]["style"] == 5)
-    )
+    d = post({"type": 2, "data": {"name": "sleep", "options": [
+        {"name": "public", "value": True}]}, **me}).json()["data"]
+    r.append(check("/sleep public -> visible", "flags" not in d))
 
-    # 3b. Submodus /giso developer
-    r = post(
-        {
-            "type": 2,
-            "data": {"name": "giso", "options": [{"name": "developer", "type": 1}]},
-            "member": {"user": {"id": "1"}},
-        }
-    )
-    dev = r.json()["data"]
-    results.append(check("/giso developer → embed", dev["embeds"][0]["url"] == "https://dev.giso.ai"))
-    results.append(
-        check("/giso developer → knop", dev["components"][0]["components"][0]["url"] == "https://dev.giso.ai")
-    )
-    results.append(check("/giso developer → standaard privé", dev.get("flags") == 64))
+    # Sub mode
+    d = post({"type": 2, "data": {"name": "giso", "options": [
+        {"name": "developer", "type": 1}]}, **me}).json()["data"]
+    r.append(check("/giso developer -> embed", d["embeds"][0]["url"] == "https://dev.giso.ai"))
+    r.append(check("/giso developer -> button",
+                   d["components"][0]["components"][0]["url"] == "https://dev.giso.ai"))
+    r.append(check("/giso developer -> private by default", d.get("flags") == 64))
 
-    # 3c. Submodus met publiek:true → wel zichtbaar voor iedereen
-    r = post(
-        {
-            "type": 2,
-            "data": {
-                "name": "giso",
-                "options": [
-                    {"name": "developer", "type": 1, "options": [{"name": "publiek", "value": True}]}
-                ],
-            },
-            "member": {"user": {"id": "1"}},
-        }
-    )
-    results.append(check("/giso developer publiek → zichtbaar", "flags" not in r.json()["data"]))
+    d = post({"type": 2, "data": {"name": "giso", "options": [
+        {"name": "developer", "type": 1, "options": [{"name": "public", "value": True}]}]},
+        **me}).json()["data"]
+    r.append(check("/giso developer public -> visible", "flags" not in d))
 
-    # 3d. /giso zonder publiek → privé
-    r = post({"type": 2, "data": {"name": "giso"}, "member": {"user": {"id": "1"}}})
-    results.append(check("/giso → standaard privé", r.json()["data"].get("flags") == 64))
+    # /info
+    d = post({"type": 2, "data": {"name": "info", "options": [
+        {"name": "topic", "value": "sleep"}]}, **me}).json()["data"]
+    r.append(check("/info sleep -> embed", d["embeds"][0]["title"] == "🌙 Sleep"))
 
-    # 4. /info met bestaand onderwerp
-    r = post(
-        {
-            "type": 2,
-            "data": {"name": "info", "options": [{"name": "onderwerp", "value": "giso"}]},
-            "member": {"user": {"id": "1"}},
-        }
-    )
-    results.append(check("/info giso → embed", r.json()["data"]["embeds"][0]["title"] == "Giso"))
+    d = post({"type": 2, "data": {"name": "info", "options": [
+        {"name": "topic", "value": "nothing"}]}, **me}).json()["data"]
+    r.append(check("unknown topic -> message", d["content"].startswith("I don't know")))
 
-    # 5. /info publiek:true → zichtbaar voor het hele kanaal
-    r = post(
-        {
-            "type": 2,
-            "data": {
-                "name": "info",
-                "options": [
-                    {"name": "onderwerp", "value": "giso"},
-                    {"name": "publiek", "value": True},
-                ],
-            },
-            "member": {"user": {"id": "1"}},
-        }
-    )
-    results.append(check("/info publiek → zichtbaar", "flags" not in r.json()["data"]))
+    # Autocomplete
+    b = post({"type": 4, "data": {"name": "info", "options": [
+        {"name": "topic", "value": "sl", "focused": True}]}}).json()
+    r.append(check("autocomplete -> choices",
+                   b["type"] == 8 and b["data"]["choices"][0]["value"] == "sleep"))
 
-    # 6. Onbekend onderwerp → nette melding, geen crash
-    r = post(
-        {
-            "type": 2,
-            "data": {"name": "info", "options": [{"name": "onderwerp", "value": "bestaatniet"}]},
-            "member": {"user": {"id": "1"}},
-        }
-    )
-    content = r.json()["data"]["content"]
-    results.append(
-        check(
-            "onbekend onderwerp → melding",
-            content.startswith("Ik ken") and r.json()["data"]["flags"] == 64,
-        )
-    )
+    # /list
+    d = post({"type": 2, "data": {"name": "list"}, **me}).json()["data"]
+    desc = d["embeds"][0]["description"]
+    r.append(check("/list -> standalone shown as /sleep", "`/sleep`" in desc))
+    r.append(check("/list -> sub mode shown as /giso developer", "`/giso developer`" in desc))
 
-    # 7. Autocomplete
-    r = post(
-        {
-            "type": 4,
-            "data": {"name": "info", "options": [{"name": "onderwerp", "value": "gi", "focused": True}]},
-        }
-    )
-    body = r.json()
-    results.append(
-        check("autocomplete → keuzes", body["type"] == 8 and body["data"]["choices"][0]["value"] == "giso")
-    )
+    # /manage is owner only
+    d = post({"type": 2, "data": {"name": "manage", "options": [
+        {"name": "delete", "options": [{"name": "key", "value": "sleep"}]}]},
+        "member": {"user": {"id": "999"}}}).json()["data"]
+    r.append(check("/manage by non-owner -> refused", "owner" in d["content"]))
 
-    # 8. /lijst
-    r = post({"type": 2, "data": {"name": "lijst"}, "member": {"user": {"id": "1"}}})
-    results.append(check("/lijst → overzicht", "/giso" in r.json()["data"]["embeds"][0]["description"]))
-
-    # 9. Beheer door een vreemde → geweigerd
-    r = post(
-        {
-            "type": 2,
-            "data": {"name": "beheer", "options": [{"name": "verwijderen", "options": [{"name": "key", "value": "giso"}]}]},
-            "member": {"user": {"id": "999"}},
-        }
-    )
-    results.append(check("beheer door niet-eigenaar → geweigerd", "eigenaar" in r.json()["data"]["content"]))
-
-    # 10. Health check
-    results.append(check("GET / → ok", client.get("/").json()["ok"] is True))
+    r.append(check("GET / -> ok", client.get("/").json()["ok"] is True))
 
     print()
-    if all(results):
-        print(f"Alle {len(results)} tests geslaagd.")
+    if all(r):
+        print(f"All {len(r)} tests passed.")
     else:
-        print(f"{results.count(False)} van {len(results)} tests gefaald.")
-        raise SystemExit(1)
+        raise SystemExit(f"{r.count(False)} of {len(r)} tests failed.")
 
 
 if __name__ == "__main__":

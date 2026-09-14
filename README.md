@@ -1,233 +1,153 @@
 # G's assistant — Discord bot
 
-Slash commands die info, links en afbeeldingen uit een Supabase-database halen.
+Slash commands that pull text, links and images out of a Supabase database.
 
 ```
-/giso              →  embed met tekst, afbeelding en knoppen
-/app               →  hetzelfde, ander onderwerp
-/info onderwerp:…  →  één commando met zoek-autocomplete voor álles
-/lijst             →  overzicht van alle onderwerpen
-/beheer …          →  onderwerpen toevoegen/aanpassen vanuit Discord (alleen jij)
+/sleep      /wake-up    /work
+/be-admin   /full-uap   /giso developer
+/info       /list       /manage
 ```
 
-Draait **gratis** op Vercel Hobby, 24/7, zonder dat je pc aan hoeft.
+Runs **free** on Vercel Hobby, 24/7, with your PC switched off.
 
 ---
 
-## Hoe het werkt
+## How it works
 
-Een normale Discord-bot is een programma dat permanent verbonden blijft met Discord
-(dat is wat discord.py doet). Dat kan niet op Vercel, en Railway heeft geen gratis
-tier meer.
+A normal Discord bot is a program that stays permanently connected to Discord
+(that is what discord.py does). That cannot run on Vercel, and Railway no
+longer has a free tier.
 
-Deze bot werkt daarom via **HTTP interactions**: Discord stuurt elke slash command
-als een beveiligde POST naar jouw Vercel-URL, en het antwoord komt terug in de
-response. Geen draaiend proces, dus geen serverkosten.
+So this bot uses **HTTP interactions**: Discord sends every slash command as a
+signed POST to your Vercel URL, and the reply comes back in the response. No
+running process, no server cost.
 
 ```
 Discord  ──POST──>  Vercel (app.py)  ──REST──>  Supabase
          <─JSON───                   <────────
 ```
 
-Wat hiermee **wel** kan: slash commands, embeds, afbeeldingen, knoppen, autocomplete,
-privé-antwoorden, gebruikers en servers herkennen.
+**What works:** slash commands, embeds, images, buttons, autocomplete, private
+replies, knowing who ran the command and where.
 
-Wat **niet** kan: gewone chatberichten meelezen, reageren op reacties, voice, of als
-"online" in de ledenlijst staan. Voor een info-bot maakt dat niets uit.
+**What does not:** reading normal chat messages, reacting to reactions, voice,
+or showing up as "online" in the member list. None of that matters for an
+info bot.
 
 ---
 
-## Bestanden
+## Files
 
-| Bestand | Wat het doet |
+| File | What it does |
 |---|---|
-| `app.py` | De bot zelf — dit draait op Vercel |
-| `schema.sql` | Plak je één keer in de Supabase SQL Editor |
-| `register_commands.py` | Meldt je slash commands aan bij Discord |
-| `test_local.py` | Test alles zonder Discord of Supabase |
-| `.env.example` | Kopieer naar `.env` en vul in |
+| `app.py` | The bot itself — this runs on Vercel |
+| `schema.sql` | Paste into the Supabase SQL Editor once |
+| `migration_commands.sql` | Adds the commands listed above |
+| `commands.json` | The exact command definitions sent to Discord |
+| `register_commands.py` | Registers commands (needs Python) |
+| `2_register_commands.ps1` | Same thing without Python — just right-click and run |
+| `1_push_to_github.bat` | Pushes your changes; Vercel redeploys itself |
+| `test_local.py` | Tests everything without Discord or Supabase |
 
 ---
 
-## Stap 1 — Supabase
+## Privacy and access
 
-In het scherm dat je open had staan:
-
-- **Organization**: AL (Free)
-- **Project name**: `dc al`
-- **Region**: Europe (West EU / Ierland) ← de bot draait in Vercel-regio `dub1`, ernaast
-- **Enable Data API**: **aan** (de bot praat via de REST API)
-- **Automatically expose new tables**: mag uit, maakt niet uit — `schema.sql` zet RLS
-  aan en trekt alle rechten van `anon` in, dus je data is sowieso niet publiek leesbaar
-- **Enable automatic RLS**: aanzetten is prima
-
-Bewaar het database-wachtwoord ergens veilig (je hebt het voor deze bot niet nodig,
-maar je krijgt het maar één keer te zien).
-
-Als het project klaar is:
-
-1. **SQL Editor** → **New query** → plak de complete inhoud van `schema.sql` → **Run**.
-   Je ziet daarna twee voorbeeldrijen in **Table Editor → entries**.
-2. **Project Settings → Data API** → kopieer de **Project URL**.
-3. **Project Settings → API Keys** → kopieer de **`service_role`** key.
-   Dit is een geheime sleutel die om alle beveiliging heen gaat: alleen in
-   Vercel-environment-variabelen en in je lokale `.env`, nooit in GitHub.
-
-> Let op: gratis Supabase-projecten gaan in de pauzestand na ±7 dagen zonder
-> activiteit. Zolang de bot af en toe gebruikt wordt, gebeurt dat niet.
+- **Every command is admin-only by default.** Regular members do not even see
+  them in the command list. Open them up per role under
+  Server Settings → Integrations.
+- **Replies are private by default** — only the person who ran the command
+  sees them. Add `public: true` to post one into the channel.
+- **`/manage` is locked to your user ID** (`OWNER_ID`), so not even another
+  admin can change your content.
+- **Only you can install the app**, as long as Public Bot stays off under
+  Developer Portal → Bot.
 
 ---
 
-## Stap 2 — Discord
+## Adding a topic
 
-Op https://discord.com/developers/applications → **G's assistant**:
+**From Discord** (fastest):
 
-1. **Bot** → **Reset Token** → kopieer het token. Ook geheim.
-2. **General Information** → Application ID en Public Key staan al ingevuld in
-   `.env.example`.
-3. Je eigen user-ID: Discord → Instellingen → Geavanceerd → **Ontwikkelaarsmodus aan**,
-   dan rechtsklik op jezelf → **Copy User ID**. Dat wordt `OWNER_ID`.
-4. Voeg de app toe aan je server:
-   https://discord.com/oauth2/authorize?client_id=1548832028055838780&scope=applications.commands
-
----
-
-## Stap 3 — Naar GitHub en Vercel
-
-```bash
-cd discord-bot
-git init
-git add .
-git commit -m "Discord bot"
-git branch -M main
-git remote add origin https://github.com/JOUW-NAAM/discord-bot.git
-git push -u origin main
+```
+/manage add key:prices title:Prices description:Our rates link:https://...
+/manage button key:prices label:Order url:https://...
 ```
 
-`.env` staat in `.gitignore`, dus je sleutels gaan niet mee. Controleer dat.
+Usable straight away with `/info topic:prices`.
 
-Op https://vercel.com → **Add New → Project** → je repo importeren.
-Vercel herkent Python automatisch; je hoeft niets in te stellen behalve
-**Environment Variables** (kies *All Environments*):
+**Want it as its own `/prices` command?** Set `dedicated` to `true` in the
+Supabase Table Editor and run `2_register_commands.ps1` again. That is the one
+step Discord cannot learn by itself — it has to be told the command name.
 
-| Naam | Waarde |
+**From Supabase** you get more control. The columns:
+
+| Column | Example |
 |---|---|
-| `DISCORD_PUBLIC_KEY` | `55d9c3fb00fcbfb5e7be60e1a65faf798fdc0e91876051fccdb84366e57f3700` |
-| `SUPABASE_URL` | `https://xxxx.supabase.co` |
-| `SUPABASE_SERVICE_KEY` | je service_role key |
-| `OWNER_ID` | jouw Discord user-ID |
-
-Deploy. Open daarna je URL in de browser — je hoort
-`{"ok": true, ...}` te zien met overal `true` achter.
-
----
-
-## Stap 4 — Endpoint koppelen
-
-Terug in het Discord Developer Portal, in het veld dat je al op je scherm had:
-
-**Interactions Endpoint URL** → `https://jouw-project.vercel.app/api/interactions`
-
-→ **Save Changes**. Discord stuurt meteen een testbericht met een expres foute
-handtekening; slaat hij op, dan werkt de koppeling. Krijg je een foutmelding, kijk
-dan onderaan bij *Als er iets misgaat*.
+| `key` | `sleep` — this is what you type |
+| `aliases` | `{rest,off}` — alternative names |
+| `title` / `description` | heading and body of the embed |
+| `url` | makes the title clickable |
+| `image_url` | large image at the bottom |
+| `thumbnail_url` | small image top-right |
+| `color` | hex without `#`, e.g. `5865F2` |
+| `links` | `[{"label": "Website", "url": "https://..."}]` → buttons |
+| `fields` | `[{"name": "Status", "value": "Active", "inline": true}]` |
+| `dedicated` | `true` = gets its own `/command` |
+| `parent` | `giso` on row `giso-developer` → `/giso developer` |
 
 ---
 
-## Stap 5 — Commands registreren
+## Making a change
 
-Lokaal (eenmalig Python nodig):
-
-```bash
-pip install -r requirements.txt
-cp .env.example .env      # vul DISCORD_BOT_TOKEN, OWNER_ID en de Supabase-gegevens in
-python register_commands.py --guild JOUW_SERVER_ID
-```
-
-Met `--guild` zijn de commands **direct** zichtbaar in die ene server — ideaal om te
-testen. Server-ID krijg je met rechtsklik op de servernaam → Copy Server ID.
-
-Werkt alles? Dan voor alle servers:
-
-```bash
-python register_commands.py
-```
-
-Globale commands kunnen tot een uur duren voor ze overal doorkomen.
+1. Edit the files in this folder
+2. Double-click `1_push_to_github.bat` → Vercel redeploys in about a minute
+3. Changed a command name or added a `dedicated` topic? Also run
+   `2_register_commands.ps1`
 
 ---
 
-## Een nieuw onderwerp toevoegen
-
-**Vanuit Discord** (snelst):
-
-```
-/beheer toevoegen key:prijzen titel:Prijzen beschrijving:Onze tarieven link:https://...
-/beheer knop key:prijzen label:Bestellen url:https://...
-```
-
-Meteen bruikbaar met `/info onderwerp:prijzen`.
-
-**Wil je er een eigen `/prijzen` command van maken?** Zet `dedicated` op `true` in de
-Table Editor en draai `python register_commands.py` opnieuw. Dat is de enige stap die
-niet vanuit Discord kan — Discord moet de commandnaam kennen.
-
-**Vanuit Supabase** heb je meer controle. De kolommen:
-
-| Kolom | Voorbeeld |
-|---|---|
-| `key` | `giso` — dit typ je |
-| `aliases` | `{gizo,gso}` — alternatieve namen |
-| `title` / `description` | kop en tekst van de embed |
-| `url` | maakt de titel klikbaar |
-| `image_url` | grote afbeelding onderaan |
-| `thumbnail_url` | kleine afbeelding rechtsboven |
-| `color` | hexkleur zonder `#`, bv. `5865F2` |
-| `links` | `[{"label": "Website", "url": "https://..."}]` → knoppen |
-| `fields` | `[{"name": "Prijs", "value": "€10", "inline": true}]` |
-| `dedicated` | `true` = krijgt een eigen `/commando` |
-
----
-
-## Testen zonder alles op te zetten
+## Testing without touching anything live
 
 ```bash
 python test_local.py
 ```
 
-Dit maakt een nep-sleutelpaar aan, ondertekent testrequests precies zoals Discord
-dat doet, en controleert alle commands plus de beveiliging. Twaalf tests, allemaal
-groen in deze versie.
+Creates a fake key pair, signs test requests exactly the way Discord does, and
+checks every command plus the security. Sixteen tests.
 
 ---
 
-## Als er iets misgaat
+## When something breaks
 
-**Discord weigert de endpoint-URL op te slaan**
-De `DISCORD_PUBLIC_KEY` in Vercel klopt niet, of de deploy was nog niet klaar. Check
-je Vercel-URL in de browser: staat er `"public_key": true`?
+**Discord refuses to save the endpoint URL**
+`DISCORD_PUBLIC_KEY` in Vercel is wrong, or the deploy was not finished. Open
+your Vercel URL in a browser: does it say `"public_key": true`?
 
-**Command geeft "De applicatie reageerde niet"**
-Het antwoord duurde langer dan 3 seconden. Kijk in Vercel → Logs. Meestal staat
-Supabase in de pauzestand (open je Supabase-dashboard om hem te wekken) of klopt
-`SUPABASE_SERVICE_KEY` niet.
+**A command says "The application did not respond"**
+The reply took longer than 3 seconds. Check Vercel → Logs. Usually Supabase is
+paused (open the dashboard to wake it) or `SUPABASE_SERVICE_KEY` is wrong.
 
-**"Er ging iets mis bij het ophalen van de gegevens"**
-De database-call faalde. Vercel → Logs toont de echte fout.
+**"Something went wrong while fetching the data"**
+The database call failed. Vercel → Logs shows the real error.
 
-**`/beheer` zegt dat alleen de eigenaar dit mag**
-`OWNER_ID` staat niet of verkeerd in Vercel. Het is een lang getal, geen gebruikersnaam.
+**`/manage` says only the owner may use it**
+`OWNER_ID` is missing or wrong in Vercel. It is a long number, not a username.
 
-**Nieuw `/commando` verschijnt niet**
-`register_commands.py` opnieuw draaien. Globaal kan tot een uur duren; met `--guild` is
-het direct.
+**A new command does not show up**
+Run `2_register_commands.ps1` again. Global takes up to an hour; with a server
+ID it is instant.
+
+**Error 40333 "internal network error"**
+Cloudflare blocked the request because of the user agent. The scripts already
+send the right one — just run it again.
 
 ---
 
-## Kosten
+## Costs
 
 | | |
 |---|---|
-| Vercel Hobby | gratis, ruim binnen de limieten voor een bot als deze |
-| Supabase Free | gratis, 500 MB database — pauzeert na ±7 dagen niets doen |
-| Discord | gratis |
+| Vercel Hobby | free, nowhere near the limits for a bot like this |
+| Supabase Free | free, 500 MB — pauses after ~7 days of no activity |
+| Discord | free |

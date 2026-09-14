@@ -1,0 +1,87 @@
+[
+  {
+    "name": "info",
+    "description": "Info, links and images about a topic",
+    "default_member_permissions": "0",
+    "options": [
+      {
+        "type": 3,
+        "name": "topic",
+        "description": "What do you want info about? (type to search)",
+        "required": true,
+        "autocomplete": true
+      },
+      {
+        "type": 5,
+        "name": "public",
+        "description": "Show the reply to everyone in the channel",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "sleep",
+    "description": "Put the system to sleep",
+    "default_member_permissions": "0",
+    "options": [
+      {
+        "type": 5,
+        "name": "public",
+        "description": "Show the reply to everyone in the channel",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "wake-up",
+    "description": "Wake the system up",
+    "default_member_permissions": "0",
+    "options": [
+      {
+        "type": 5,
+        "name": "public",
+        "description": "Show the reply to everyone in the channel",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "work",
+    "description": "Work mode",
+    "default_member_permissions": "0",
+    "options": [
+      {
+        "type": 5,
+        "name": "public",
+        "description": "Show the reply to everyone in the channel",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "be-admin",
+    "description": "Admin mode",
+    "default_member_permissions": "0",
+    "options": [
+      {
+        "type": 5,
+        "name": "public",
+        "description": "Show the reply to everyone in the channel",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "full-uap",
+    "description": "Full UAP overview",
+    "default_member_permissions": "0",
+    "options": [
+      {
+        "type": 5,
+        "name": "public",
+        "description": "Show the reply to everyone in the channel",
+        "required": false
+      }
+    ]
+  }
+]
