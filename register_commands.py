@@ -39,12 +39,26 @@ STRING, BOOLEAN, SUB_COMMAND = 3, 5, 1
 
 VALID_NAME = re.compile(r"^[a-z0-9_-]{1,32}$")
 
+# "0" = standaard voor niemand zichtbaar behalve serverbeheerders.
+# Via Serverinstellingen -> Integraties kun je het per rol alsnog openzetten.
+ADMIN_ONLY = "0"
+
+# Antwoorden zijn standaard alleen voor jou zichtbaar; hiermee zet je er
+# eentje bewust in het kanaal.
+PUBLIEK = {
+    "type": BOOLEAN,
+    "name": "publiek",
+    "description": "Laat het antwoord aan iedereen in het kanaal zien",
+    "required": False,
+}
+
 
 def base_commands() -> list[dict]:
     return [
         {
             "name": "info",
             "description": "Info, links en afbeeldingen over een onderwerp",
+            "default_member_permissions": ADMIN_ONLY,
             "options": [
                 {
                     "type": STRING,
@@ -53,22 +67,18 @@ def base_commands() -> list[dict]:
                     "required": True,
                     "autocomplete": True,
                 },
-                {
-                    "type": BOOLEAN,
-                    "name": "prive",
-                    "description": "Alleen jij ziet het antwoord",
-                    "required": False,
-                },
+                PUBLIEK,
             ],
         },
         {
             "name": "lijst",
             "description": "Laat alle onderwerpen zien die ik ken",
+            "default_member_permissions": ADMIN_ONLY,
         },
         {
             "name": "beheer",
             "description": "Inhoud beheren (alleen de eigenaar)",
-            "default_member_permissions": "0",
+            "default_member_permissions": ADMIN_ONLY,
             "options": [
                 {
                     "type": SUB_COMMAND,
@@ -196,11 +206,26 @@ def dedicated_commands() -> list[dict]:
                         "type": SUB_COMMAND,
                         "name": mode,
                         "description": (c.get("command_desc") or c.get("title") or mode)[:100],
+                        "options": [PUBLIEK],
                     }
                 )
-            commands.append({"name": key, "description": desc, "options": subs})
+            commands.append(
+                {
+                    "name": key,
+                    "description": desc,
+                    "default_member_permissions": ADMIN_ONLY,
+                    "options": subs,
+                }
+            )
         else:
-            commands.append({"name": key, "description": desc})
+            commands.append(
+                {
+                    "name": key,
+                    "description": desc,
+                    "default_member_permissions": ADMIN_ONLY,
+                    "options": [PUBLIEK],
+                }
+            )
     return commands
 
 

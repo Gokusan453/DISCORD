@@ -123,6 +123,26 @@ def main() -> None:
     results.append(
         check("/giso developer → knop", dev["components"][0]["components"][0]["url"] == "https://dev.giso.ai")
     )
+    results.append(check("/giso developer → standaard privé", dev.get("flags") == 64))
+
+    # 3c. Submodus met publiek:true → wel zichtbaar voor iedereen
+    r = post(
+        {
+            "type": 2,
+            "data": {
+                "name": "giso",
+                "options": [
+                    {"name": "developer", "type": 1, "options": [{"name": "publiek", "value": True}]}
+                ],
+            },
+            "member": {"user": {"id": "1"}},
+        }
+    )
+    results.append(check("/giso developer publiek → zichtbaar", "flags" not in r.json()["data"]))
+
+    # 3d. /giso zonder publiek → privé
+    r = post({"type": 2, "data": {"name": "giso"}, "member": {"user": {"id": "1"}}})
+    results.append(check("/giso → standaard privé", r.json()["data"].get("flags") == 64))
 
     # 4. /info met bestaand onderwerp
     r = post(
@@ -134,7 +154,7 @@ def main() -> None:
     )
     results.append(check("/info giso → embed", r.json()["data"]["embeds"][0]["title"] == "Giso"))
 
-    # 5. /info prive → alleen zichtbaar voor de gebruiker
+    # 5. /info publiek:true → zichtbaar voor het hele kanaal
     r = post(
         {
             "type": 2,
@@ -142,13 +162,13 @@ def main() -> None:
                 "name": "info",
                 "options": [
                     {"name": "onderwerp", "value": "giso"},
-                    {"name": "prive", "value": True},
+                    {"name": "publiek", "value": True},
                 ],
             },
             "member": {"user": {"id": "1"}},
         }
     )
-    results.append(check("/info prive → ephemeral", r.json()["data"]["flags"] == 64))
+    results.append(check("/info publiek → zichtbaar", "flags" not in r.json()["data"]))
 
     # 6. Onbekend onderwerp → nette melding, geen crash
     r = post(

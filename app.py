@@ -236,7 +236,8 @@ def actor_id(body: dict[str, Any]) -> str:
 async def handle_info(data: dict[str, Any]) -> dict[str, Any]:
     opts = options_to_dict(data.get("options"))
     term = str(opts.get("onderwerp", "")).lower()
-    ephemeral = bool(opts.get("prive", False))
+    # standaard privé; met publiek:true ziet het hele kanaal het
+    ephemeral = not bool(opts.get("publiek", False))
 
     entry = await find_entry(term)
     if not entry:
@@ -253,8 +254,11 @@ async def handle_dedicated(command_name: str, data: dict[str, Any]) -> dict[str,
     options = data.get("options") or []
     if options and options[0].get("type") == SUB_COMMAND:
         key = f"{command_name}-{options[0]['name']}"
+        options = options[0].get("options") or []
     else:
         key = command_name
+
+    ephemeral = not bool(options_to_dict(options).get("publiek", False))
 
     entry = await find_entry(key)
     if not entry:
@@ -263,7 +267,7 @@ async def handle_dedicated(command_name: str, data: dict[str, Any]) -> dict[str,
             f"Voeg een rij toe in de database."
         )
     await bump_uses(entry["key"])
-    return entry_response(entry)
+    return entry_response(entry, ephemeral)
 
 
 async def handle_lijst() -> dict[str, Any]:
