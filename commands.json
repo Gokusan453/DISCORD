@@ -47,7 +47,7 @@
   },
   {
     "name": "work",
-    "description": "Work mode",
+    "description": "Start the workspace",
     "default_member_permissions": "0",
     "options": [
       {
@@ -60,7 +60,7 @@
   },
   {
     "name": "be-admin",
-    "description": "Admin mode",
+    "description": "Enter admin mode",
     "default_member_permissions": "0",
     "options": [
       {
@@ -74,6 +74,19 @@
   {
     "name": "full-uap",
     "description": "Full UAP overview",
+    "default_member_permissions": "0",
+    "options": [
+      {
+        "type": 5,
+        "name": "public",
+        "description": "Show the reply to everyone in the channel",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "analyze",
+    "description": "Analyze new messages",
     "default_member_permissions": "0",
     "options": [
       {
